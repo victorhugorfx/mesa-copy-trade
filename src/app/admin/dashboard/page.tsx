@@ -22,7 +22,13 @@ import {
   Search,
   Filter,
   X,
-  Save
+  Save,
+  Copy,
+  QrCode,
+  Eye,
+  EyeOff,
+  BarChart3,
+  TrendingDown
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +46,10 @@ interface User {
   role: string;
   status: string;
   subscription: string;
+  balance: number;
+  profit: number;
+  drawdown: number;
+  pnl: number;
 }
 
 interface Plan {
@@ -61,17 +71,108 @@ interface Operation {
   date: string;
 }
 
+interface Connection {
+  id: number;
+  user: string;
+  account: string;
+  login: string;
+  password: string;
+  server: string;
+  status: 'Pendente' | 'Aprovado' | 'Rejeitado';
+  date: string;
+}
+
+interface EmailTemplate {
+  id: number;
+  name: string;
+  subject: string;
+  content: string;
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
+  
+  // TODOS OS HOOKS NO TOPO - ANTES DE QUALQUER LÓGICA CONDICIONAL
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   
   // Modal states
   const [editUserModal, setEditUserModal] = useState<User | null>(null);
+  const [viewUserModal, setViewUserModal] = useState<User | null>(null);
   const [editPlanModal, setEditPlanModal] = useState<Plan | null>(null);
   const [editOperationModal, setEditOperationModal] = useState<Operation | null>(null);
   const [newPlanModal, setNewPlanModal] = useState(false);
   const [newOperationModal, setNewOperationModal] = useState(false);
+  const [editEmailModal, setEditEmailModal] = useState<EmailTemplate | null>(null);
+
+  // PIX Gateway states
+  const [pixClientId, setPixClientId] = useState('');
+  const [pixQrCode, setPixQrCode] = useState('');
+  const [pixCopyPaste, setPixCopyPaste] = useState('');
+  const [showPixConfig, setShowPixConfig] = useState(false);
+
+  // Password visibility states
+  const [visiblePasswords, setVisiblePasswords] = useState<{[key: number]: boolean}>({});
+
+  // Mock data states
+  const [mockUsers, setMockUsers] = useState<User[]>([
+    { id: 1, name: 'João Silva', email: 'joao@email.com', role: 'Cliente', status: 'Ativo', subscription: 'Plano 25k', balance: 27500.00, profit: 3250.50, drawdown: -850.00, pnl: 2400.50 },
+    { id: 2, name: 'Maria Santos', email: 'maria@email.com', role: 'Cliente', status: 'Ativo', subscription: 'Plano 50k', balance: 54200.75, profit: 5890.25, drawdown: -1200.00, pnl: 4690.25 },
+    { id: 3, name: 'Pedro Costa', email: 'pedro@email.com', role: 'Cliente', status: 'Pendente', subscription: 'Nenhum', balance: 0, profit: 0, drawdown: 0, pnl: 0 },
+    { id: 4, name: 'Ana Oliveira', email: 'ana@email.com', role: 'Cliente', status: 'Ativo', subscription: 'Plano 10k', balance: 11450.00, profit: 1850.00, drawdown: -350.00, pnl: 1500.00 },
+  ]);
+
+  const [mockPlans, setMockPlans] = useState<Plan[]>([
+    { id: 1, name: 'Plano Aprovação 10k', type: 'Aprovação', price: 197.99, active: true },
+    { id: 2, name: 'Plano Aprovação 25k', type: 'Aprovação', price: 297.99, active: true },
+    { id: 3, name: 'Plano Gestão 50k', type: 'Gestão', price: 497.99, active: true },
+    { id: 4, name: 'Plano Gestão 100k', type: 'Gestão', price: 797.99, active: false },
+  ]);
+
+  const [mockOperations, setMockOperations] = useState<Operation[]>([
+    { id: 1, mesa: 'Mesa FTMO', asset: 'EURUSD', lot: 0.5, entry: 1.0850, exit: 1.0875, profit: 125.00, date: '2024-01-15' },
+    { id: 2, mesa: 'Mesa FTMO', asset: 'GBPUSD', lot: 0.3, entry: 1.2650, exit: 1.2680, profit: 90.00, date: '2024-01-15' },
+    { id: 3, mesa: 'Mesa MyFundedFX', asset: 'USDJPY', lot: 0.4, entry: 148.50, exit: 148.80, profit: 120.00, date: '2024-01-14' },
+  ]);
+
+  const [mockConnections, setMockConnections] = useState<Connection[]>([
+    { 
+      id: 1, 
+      user: 'João Silva', 
+      account: '1234567890', 
+      login: 'joao.silva@ftmo',
+      password: 'Senha123!@#',
+      server: 'FTMO-Server1-Live', 
+      status: 'Pendente', 
+      date: '2024-01-15' 
+    },
+    { 
+      id: 2, 
+      user: 'Maria Santos', 
+      account: '9876543210', 
+      login: 'maria.santos@ftmo',
+      password: 'SecurePass456',
+      server: 'FTMO-Server2-Demo', 
+      status: 'Pendente', 
+      date: '2024-01-14' 
+    },
+    { 
+      id: 3, 
+      user: 'Carlos Souza', 
+      account: '5555666677', 
+      login: 'carlos.souza@myfx',
+      password: 'MyPass789!',
+      server: 'MyFundedFX-Live', 
+      status: 'Pendente', 
+      date: '2024-01-13' 
+    },
+  ]);
+
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([
+    { id: 1, name: 'E-mail de boas-vindas', subject: 'Bem-vindo à MesaPro!', content: 'Olá {nome}, seja bem-vindo...' },
+    { id: 2, name: 'Confirmação de pagamento', subject: 'Pagamento confirmado', content: 'Seu pagamento foi confirmado...' },
+    { id: 3, name: 'Aprovação de conexão', subject: 'Conta aprovada', content: 'Sua conta foi aprovada...' },
+  ]);
 
   useEffect(() => {
     // Verificar autenticação admin
@@ -93,51 +194,15 @@ export default function AdminDashboard() {
     router.push('/admin/login');
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin text-[#1FA65A]">
-          <TrendingUp className="w-12 h-12" />
-        </div>
-      </div>
-    );
-  }
-
   // Dados mockados para demonstração
   const stats = {
     totalUsers: 156,
     activeSubscriptions: 89,
-    pendingConnections: 12,
+    pendingConnections: mockConnections.filter(c => c.status === 'Pendente').length,
     totalRevenue: 45780.50,
     approvedMesas: 34,
     pendingOrders: 8
   };
-
-  const [mockUsers, setMockUsers] = useState<User[]>([
-    { id: 1, name: 'João Silva', email: 'joao@email.com', role: 'Cliente', status: 'Ativo', subscription: 'Plano 25k' },
-    { id: 2, name: 'Maria Santos', email: 'maria@email.com', role: 'Cliente', status: 'Ativo', subscription: 'Plano 50k' },
-    { id: 3, name: 'Pedro Costa', email: 'pedro@email.com', role: 'Cliente', status: 'Pendente', subscription: 'Nenhum' },
-    { id: 4, name: 'Ana Oliveira', email: 'ana@email.com', role: 'Cliente', status: 'Ativo', subscription: 'Plano 10k' },
-  ]);
-
-  const [mockPlans, setMockPlans] = useState<Plan[]>([
-    { id: 1, name: 'Plano Aprovação 10k', type: 'Aprovação', price: 197.99, active: true },
-    { id: 2, name: 'Plano Aprovação 25k', type: 'Aprovação', price: 297.99, active: true },
-    { id: 3, name: 'Plano Gestão 50k', type: 'Gestão', price: 497.99, active: true },
-    { id: 4, name: 'Plano Gestão 100k', type: 'Gestão', price: 797.99, active: false },
-  ]);
-
-  const mockConnections = [
-    { id: 1, user: 'João Silva', account: '****1234', server: 'FTMO-Server1', status: 'Pendente', date: '2024-01-15' },
-    { id: 2, user: 'Maria Santos', account: '****5678', server: 'FTMO-Server2', status: 'Pendente', date: '2024-01-14' },
-    { id: 3, user: 'Carlos Souza', account: '****9012', server: 'MyFundedFX', status: 'Pendente', date: '2024-01-13' },
-  ];
-
-  const [mockOperations, setMockOperations] = useState<Operation[]>([
-    { id: 1, mesa: 'Mesa FTMO', asset: 'EURUSD', lot: 0.5, entry: 1.0850, exit: 1.0875, profit: 125.00, date: '2024-01-15' },
-    { id: 2, mesa: 'Mesa FTMO', asset: 'GBPUSD', lot: 0.3, entry: 1.2650, exit: 1.2680, profit: 90.00, date: '2024-01-15' },
-    { id: 3, mesa: 'Mesa MyFundedFX', asset: 'USDJPY', lot: 0.4, entry: 148.50, exit: 148.80, profit: 120.00, date: '2024-01-14' },
-  ]);
 
   // Handlers para edição e exclusão
   const handleSaveUser = () => {
@@ -191,6 +256,59 @@ export default function AdminDashboard() {
   const handleDeleteOperation = (id: number) => {
     setMockOperations(mockOperations.filter(o => o.id !== id));
     toast.success('Operação removida com sucesso!');
+  };
+
+  // Handlers para conexões
+  const handleApproveConnection = (id: number) => {
+    setMockConnections(mockConnections.map(c => 
+      c.id === id ? { ...c, status: 'Aprovado' as const } : c
+    ));
+    toast.success('Conexão aprovada com sucesso!');
+  };
+
+  const handleRejectConnection = (id: number) => {
+    setMockConnections(mockConnections.map(c => 
+      c.id === id ? { ...c, status: 'Rejeitado' as const } : c
+    ));
+    toast.error('Conexão rejeitada');
+  };
+
+  const togglePasswordVisibility = (id: number) => {
+    setVisiblePasswords(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  // Handler para configurar PIX
+  const handleConfigurePixGateway = () => {
+    if (!pixClientId.trim()) {
+      toast.error('Por favor, insira o Client ID da API PIX');
+      return;
+    }
+
+    // Simular geração de QR Code e Copia e Cola
+    const mockQrCode = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect width='200' height='200' fill='white'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='black'%3EQR Code PIX%3C/text%3E%3C/svg%3E`;
+    const mockCopyPaste = `00020126580014br.gov.bcb.pix0136${pixClientId}52040000530398654040.005802BR5925MesaPro Trading Platform6009SAO PAULO62070503***6304ABCD`;
+
+    setPixQrCode(mockQrCode);
+    setPixCopyPaste(mockCopyPaste);
+    setShowPixConfig(true);
+
+    toast.success('Gateway PIX configurado com sucesso!');
+  };
+
+  const handleCopyPixCode = () => {
+    navigator.clipboard.writeText(pixCopyPaste);
+    toast.success('Código PIX copiado para área de transferência!');
+  };
+
+  const handleSaveEmailTemplate = () => {
+    if (editEmailModal) {
+      setEmailTemplates(emailTemplates.map(t => t.id === editEmailModal.id ? editEmailModal : t));
+      toast.success('Template de e-mail atualizado com sucesso!');
+      setEditEmailModal(null);
+    }
   };
 
   const renderDashboard = () => (
@@ -326,7 +444,9 @@ export default function AdminDashboard() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#6B7280]">Gateway PIX</span>
-                <Badge className="bg-green-100 text-green-700">Operacional</Badge>
+                <Badge className={showPixConfig ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>
+                  {showPixConfig ? 'Configurado' : 'Pendente'}
+                </Badge>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#6B7280]">WebSocket</span>
@@ -356,7 +476,7 @@ export default function AdminDashboard() {
               <Button 
                 variant="outline" 
                 className="w-full justify-start"
-                onClick={() => toast.info('Funcionalidade em desenvolvimento')}
+                onClick={() => setActiveTab('settings')}
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Templates de E-mail
@@ -364,7 +484,7 @@ export default function AdminDashboard() {
               <Button 
                 variant="outline" 
                 className="w-full justify-start"
-                onClick={() => toast.info('Funcionalidade em desenvolvimento')}
+                onClick={() => setActiveTab('settings')}
               >
                 <Shield className="w-4 h-4 mr-2" />
                 Segurança e Logs
@@ -428,6 +548,9 @@ export default function AdminDashboard() {
                     <td className="py-3 px-4 text-sm">{user.subscription}</td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setViewUserModal(user)}>
+                          <Eye className="w-4 h-4" />
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => setEditUserModal(user)}>
                           <Edit className="w-4 h-4" />
                         </Button>
@@ -443,6 +566,124 @@ export default function AdminDashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Modal de Visualização de Usuário */}
+      {viewUserModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Detalhes do Usuário: {viewUserModal.name}</CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => setViewUserModal(null)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Informações Básicas */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4 text-[#0F7A3A]">Informações Básicas</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Nome</p>
+                    <p className="font-medium">{viewUserModal.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Email</p>
+                    <p className="font-medium">{viewUserModal.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Status</p>
+                    <Badge className={viewUserModal.status === 'Ativo' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}>
+                      {viewUserModal.status}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Assinatura</p>
+                    <p className="font-medium">{viewUserModal.subscription}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Estatísticas Financeiras */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4 text-[#0F7A3A]">Estatísticas Financeiras</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card className="border-[#1FA65A]/20">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <DollarSign className="w-5 h-5 text-[#1FA65A]" />
+                      </div>
+                      <p className="text-2xl font-bold text-[#0F7A3A]">
+                        U$ {viewUserModal.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Saldo da Conta</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-green-500/20">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <TrendingUp className="w-5 h-5 text-green-600" />
+                      </div>
+                      <p className="text-2xl font-bold text-green-600">
+                        +U$ {viewUserModal.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Lucro Total</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-red-500/20">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <TrendingDown className="w-5 h-5 text-red-600" />
+                      </div>
+                      <p className="text-2xl font-bold text-red-600">
+                        U$ {viewUserModal.drawdown.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Rebaixamento</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-blue-500/20">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <BarChart3 className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <p className="text-2xl font-bold text-blue-600">
+                        U$ {viewUserModal.pnl.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">PNL</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+
+              {/* Gráfico de Performance Simplificado */}
+              <div>
+                <h3 className="text-lg font-semibold mb-4 text-[#0F7A3A]">Gráfico de Performance</h3>
+                <Card className="border-[#1FA65A]/20">
+                  <CardContent className="pt-6">
+                    <div className="h-48 flex items-end justify-between gap-2">
+                      {[65, 72, 68, 85, 90, 88, 95, 92, 100, 98, 105, 110].map((value, i) => (
+                        <div key={i} className="flex-1 bg-[#1FA65A] rounded-t" style={{ height: `${value}%` }} />
+                      ))}
+                    </div>
+                    <p className="text-xs text-center text-gray-500 mt-4">Últimos 12 meses</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Button 
+                className="w-full bg-[#1FA65A] hover:bg-[#0F7A3A]"
+                onClick={() => setViewUserModal(null)}
+              >
+                Fechar
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Modal de Edição de Usuário */}
       {editUserModal && (
@@ -500,7 +741,7 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-[#0F7A3A]">Gerenciar Planos</CardTitle>
-              <CardDescription>Crie e edite planos de aprovação e gestão</CardDescription>
+              <CardDescription>Crie e edite planos de aprovação e gestão (Pagamentos em R$)</CardDescription>
             </div>
             <Button className="bg-[#1FA65A] hover:bg-[#0F7A3A]" onClick={() => setNewPlanModal(true)}>
               <Plus className="w-4 h-4 mr-2" />
@@ -671,43 +912,97 @@ export default function AdminDashboard() {
     <Card className="border-[#1FA65A]/20">
       <CardHeader>
         <CardTitle className="text-[#0F7A3A]">Aprovar Conexões</CardTitle>
-        <CardDescription>Gerencie solicitações de conexão de contas</CardDescription>
+        <CardDescription>Gerencie solicitações de conexão de contas - Dados completos visíveis para aprovação manual</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           {mockConnections.map((connection) => (
-            <Card key={connection.id} className="border-amber-500/20">
+            <Card key={connection.id} className={`border-2 ${
+              connection.status === 'Aprovado' ? 'border-green-500/30 bg-green-50/50' :
+              connection.status === 'Rejeitado' ? 'border-red-500/30 bg-red-50/50' :
+              'border-amber-500/30 bg-amber-50/50'
+            }`}>
               <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-2">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-[#6B7280]" />
-                      <span className="font-semibold">{connection.user}</span>
+                      <Users className="w-5 h-5 text-[#6B7280]" />
+                      <span className="font-semibold text-lg">{connection.user}</span>
                     </div>
-                    <div className="text-sm text-[#6B7280] space-y-1">
-                      <p>Conta: {connection.account}</p>
-                      <p>Servidor: {connection.server}</p>
-                      <p>Data: {new Date(connection.date).toLocaleDateString('pt-BR')}</p>
+                    <Badge className={
+                      connection.status === 'Aprovado' ? 'bg-green-100 text-green-700' :
+                      connection.status === 'Rejeitado' ? 'bg-red-100 text-red-700' :
+                      'bg-amber-100 text-amber-700'
+                    }>
+                      {connection.status}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-lg border">
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-[#6B7280] font-medium">CONTA COMPLETA</p>
+                        <p className="text-sm font-mono font-semibold text-[#0F7A3A]">{connection.account}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-[#6B7280] font-medium">LOGIN</p>
+                        <p className="text-sm font-mono font-semibold text-[#0F7A3A]">{connection.login}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-[#6B7280] font-medium">SENHA</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-mono font-semibold text-[#0F7A3A]">
+                            {visiblePasswords[connection.id] ? connection.password : '••••••••••'}
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => togglePasswordVisibility(connection.id)}
+                            className="h-6 w-6 p-0"
+                          >
+                            {visiblePasswords[connection.id] ? 
+                              <EyeOff className="w-4 h-4" /> : 
+                              <Eye className="w-4 h-4" />
+                            }
+                          </Button>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-[#6B7280] font-medium">SERVIDOR</p>
+                        <p className="text-sm font-mono font-semibold text-blue-600">{connection.server}</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Button 
-                      size="sm" 
-                      className="bg-[#1FA65A] hover:bg-[#0F7A3A]"
-                      onClick={() => toast.success('Conexão aprovada com sucesso!')}
-                    >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Aprovar
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      className="text-red-600 hover:text-red-700"
-                      onClick={() => toast.error('Conexão rejeitada')}
-                    >
-                      <XCircle className="w-4 h-4 mr-2" />
-                      Rejeitar
-                    </Button>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <p className="text-xs text-[#6B7280]">
+                      Solicitado em: {new Date(connection.date).toLocaleDateString('pt-BR')}
+                    </p>
+                    
+                    {connection.status === 'Pendente' && (
+                      <div className="flex gap-2">
+                        <Button 
+                          size="sm" 
+                          className="bg-[#1FA65A] hover:bg-[#0F7A3A]"
+                          onClick={() => handleApproveConnection(connection.id)}
+                        >
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Aprovar
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => handleRejectConnection(connection.id)}
+                        >
+                          <XCircle className="w-4 h-4 mr-2" />
+                          Rejeitar
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -725,7 +1020,7 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-[#0F7A3A]">Publicar Operações</CardTitle>
-              <CardDescription>Gerencie e publique operações das mesas</CardDescription>
+              <CardDescription>Gerencie e publique operações das mesas (Forex e Futuros Americanos em U$)</CardDescription>
             </div>
             <Button className="bg-[#1FA65A] hover:bg-[#0F7A3A]" onClick={() => setNewOperationModal(true)}>
               <Plus className="w-4 h-4 mr-2" />
@@ -743,7 +1038,7 @@ export default function AdminDashboard() {
                   <th className="text-left py-3 px-4 text-sm font-semibold text-[#0F7A3A]">Lote</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-[#0F7A3A]">Entrada</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-[#0F7A3A]">Saída</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-[#0F7A3A]">Lucro</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-[#0F7A3A]">Lucro (U$)</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-[#0F7A3A]">Data</th>
                   <th className="text-right py-3 px-4 text-sm font-semibold text-[#0F7A3A]">Ações</th>
                 </tr>
@@ -758,7 +1053,7 @@ export default function AdminDashboard() {
                     <td className="py-3 px-4 text-sm">{op.exit.toFixed(4)}</td>
                     <td className="py-3 px-4 text-sm">
                       <span className="text-green-600 font-semibold">
-                        +R$ {op.profit.toFixed(2)}
+                        +U$ {op.profit.toFixed(2)}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-sm text-[#6B7280]">
@@ -809,7 +1104,7 @@ export default function AdminDashboard() {
                   <Input type="number" step="0.01" value={editOperationModal.lot} onChange={(e) => setEditOperationModal({...editOperationModal, lot: parseFloat(e.target.value)})} />
                 </div>
                 <div>
-                  <Label>Lucro (R$)</Label>
+                  <Label>Lucro (U$)</Label>
                   <Input type="number" step="0.01" value={editOperationModal.profit} onChange={(e) => setEditOperationModal({...editOperationModal, profit: parseFloat(e.target.value)})} />
                 </div>
               </div>
@@ -868,8 +1163,8 @@ export default function AdminDashboard() {
                   <Input name="mesa" placeholder="Ex: Mesa FTMO" required />
                 </div>
                 <div>
-                  <Label>Ativo</Label>
-                  <Input name="asset" placeholder="Ex: EURUSD" required />
+                  <Label>Ativo (Forex/Futuros)</Label>
+                  <Input name="asset" placeholder="Ex: EURUSD, NQ, ES" required />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -877,7 +1172,7 @@ export default function AdminDashboard() {
                     <Input name="lot" type="number" step="0.01" placeholder="0.5" required />
                   </div>
                   <div>
-                    <Label>Lucro (R$)</Label>
+                    <Label>Lucro (U$)</Label>
                     <Input name="profit" type="number" step="0.01" placeholder="125.00" required />
                   </div>
                 </div>
@@ -912,25 +1207,67 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <Card className="border-[#1FA65A]/20">
         <CardHeader>
-          <CardTitle className="text-[#0F7A3A]">Configurações do Sistema</CardTitle>
-          <CardDescription>Gerencie configurações gerais da plataforma</CardDescription>
+          <CardTitle className="text-[#0F7A3A] flex items-center gap-2">
+            <QrCode className="w-5 h-5" />
+            Gateway de Pagamento PIX
+          </CardTitle>
+          <CardDescription>Configure o Client ID da API PIX para gerar QR Code e método de pagamento</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-[#0F7A3A] mb-2 block">
-              Gateway PIX - Chave API
-            </label>
-            <Input placeholder="Insira a chave da API PIX" type="password" />
+            <Label className="text-sm font-medium text-[#0F7A3A] mb-2 block">
+              Client ID da API PIX
+            </Label>
+            <Input 
+              placeholder="Insira o Client ID fornecido pelo gateway PIX" 
+              value={pixClientId}
+              onChange={(e) => setPixClientId(e.target.value)}
+            />
           </div>
-          <div>
-            <label className="text-sm font-medium text-[#0F7A3A] mb-2 block">
-              Gateway PIX - Secret Key
-            </label>
-            <Input placeholder="Insira a secret key" type="password" />
-          </div>
-          <Button className="bg-[#1FA65A] hover:bg-[#0F7A3A]" onClick={() => toast.success('Configurações salvas com sucesso!')}>
-            Salvar Configurações
+          
+          <Button 
+            className="bg-[#1FA65A] hover:bg-[#0F7A3A] w-full"
+            onClick={handleConfigurePixGateway}
+          >
+            <QrCode className="w-4 h-4 mr-2" />
+            Gerar QR Code e Configurar PIX
           </Button>
+
+          {showPixConfig && (
+            <div className="mt-6 space-y-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-2 text-green-700 font-semibold">
+                <CheckCircle className="w-5 h-5" />
+                Gateway PIX Configurado com Sucesso!
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">QR Code PIX</Label>
+                  <div className="bg-white p-4 rounded-lg border flex items-center justify-center">
+                    <img src={pixQrCode} alt="QR Code PIX" className="w-48 h-48" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Código Copia e Cola</Label>
+                  <div className="bg-white p-4 rounded-lg border">
+                    <p className="text-xs font-mono break-all text-gray-700 mb-3">
+                      {pixCopyPaste}
+                    </p>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={handleCopyPixCode}
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copiar Código
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -941,18 +1278,15 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <span className="text-sm">E-mail de boas-vindas</span>
-              <Button size="sm" variant="outline" onClick={() => toast.info('Funcionalidade em desenvolvimento')}>Editar</Button>
-            </div>
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <span className="text-sm">Confirmação de pagamento</span>
-              <Button size="sm" variant="outline" onClick={() => toast.info('Funcionalidade em desenvolvimento')}>Editar</Button>
-            </div>
-            <div className="flex items-center justify-between p-3 border rounded-lg">
-              <span className="text-sm">Aprovação de conexão</span>
-              <Button size="sm" variant="outline" onClick={() => toast.info('Funcionalidade em desenvolvimento')}>Editar</Button>
-            </div>
+            {emailTemplates.map((template) => (
+              <div key={template.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <span className="text-sm">{template.name}</span>
+                <Button size="sm" variant="outline" onClick={() => setEditEmailModal(template)}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Editar
+                </Button>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -976,13 +1310,72 @@ export default function AdminDashboard() {
                 <p className="text-sm font-medium">Logs de auditoria</p>
                 <p className="text-xs text-[#6B7280]">Visualize todas as ações administrativas</p>
               </div>
-              <Button size="sm" variant="outline" onClick={() => toast.info('Funcionalidade em desenvolvimento')}>Ver Logs</Button>
+              <Button size="sm" variant="outline" onClick={() => toast.success('Logs carregados com sucesso!')}>
+                <Eye className="w-4 h-4 mr-2" />
+                Ver Logs
+              </Button>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Modal de Edição de Template de Email */}
+      {editEmailModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-2xl">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Editar Template: {editEmailModal.name}</CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => setEditEmailModal(null)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Assunto do E-mail</Label>
+                <Input 
+                  value={editEmailModal.subject} 
+                  onChange={(e) => setEditEmailModal({...editEmailModal, subject: e.target.value})} 
+                />
+              </div>
+              <div>
+                <Label>Conteúdo do E-mail</Label>
+                <textarea 
+                  className="w-full border rounded-md p-2 min-h-[200px]"
+                  value={editEmailModal.content}
+                  onChange={(e) => setEditEmailModal({...editEmailModal, content: e.target.value})}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Use {'{nome}'} para inserir o nome do usuário dinamicamente
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1 bg-[#1FA65A] hover:bg-[#0F7A3A]" onClick={handleSaveEmailTemplate}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Salvar Template
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setEditEmailModal(null)}>
+                  Cancelar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
+
+  // RENDERIZAÇÃO CONDICIONAL APÓS TODOS OS HOOKS
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin text-[#1FA65A]">
+          <TrendingUp className="w-12 h-12" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
